@@ -35,7 +35,7 @@ fun main(args: Array<String>) {
 	val es = Executors.newFixedThreadPool(40)
 	val futures = mutableListOf<Future<List<RandomAccessibleInterval<UnsignedLongType>>>>()
 
-	for (i in zMin until 1)
+	for (i in zMin until zMax)
 	{
 		println("Processing i=$i")
 		futures.add( es.submit(Callable{
