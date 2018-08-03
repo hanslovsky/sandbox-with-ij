@@ -37,7 +37,6 @@ private fun <I : IntegerType<I>> withRandomColors(
 
 fun main(args: Array<String>) {
 	val dim = longArrayOf(200, 100)
-	println("${dim.asList()}")
 	val img1 = ArrayImgs.unsignedLongs(*dim)
 	val img2 = ArrayImgs.unsignedLongs(*dim)
 	val numSteps = 100
