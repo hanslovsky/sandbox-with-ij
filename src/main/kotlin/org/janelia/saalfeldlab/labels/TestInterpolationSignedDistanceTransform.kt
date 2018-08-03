@@ -16,8 +16,6 @@ import net.imglib2.type.numeric.integer.LongType
 import net.imglib2.type.numeric.real.DoubleType
 import net.imglib2.view.Views
 import java.util.*
-import java.util.stream.Collectors
-import java.util.stream.Stream
 import kotlin.math.roundToLong
 
 private fun <I : IntegerType<I>> withRandomColors(
@@ -40,12 +38,8 @@ fun main(args: Array<String>) {
 	val img1 = ArrayImgs.unsignedLongs(*dim)
 	val img2 = ArrayImgs.unsignedLongs(*dim)
 	val numSteps = 100
-	val interpolations = Stream
-			.generate { ArrayImgs.unsignedLongs(*dim) }
-			.limit(numSteps.toLong())
-			.collect(Collectors.toList())
-			.toTypedArray()
-	interpolations.forEach { it.forEach { it.set(-1) } }
+	val interpolations = InterpolateBetweenSections.makeFillers(numSteps.toLong(), *dim)
+	interpolations.forEach { Views.flatIterable(it).forEach { it.set(-1) } }
 
 	val rng = Random(100)
 	val radii = longArrayOf(
