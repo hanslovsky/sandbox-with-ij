@@ -81,7 +81,7 @@ fun main(args: Array<String>) {
 			InterpolateBetweenSections.interpolateBetweenSectionsWithSignedDistanceTransform(hs1, hs2, ArrayImgFactory(DoubleType()), *fillers)
 			val localSections: List<RandomAccessibleInterval<UnsignedLongType>> = listOf(hs1) + fillers
 			sw.stop()
-			counter.incrementCount { count, total -> ConvertCremiLabels.LOG.info("Finished interpolating {}/{} sections: {} in {} seconds", count, total, i, TimeUnit.SECONDS.convert(stopWatch.nanoTime(), TimeUnit.NANOSECONDS)) }
+			counter.incrementCount { count, total -> ConvertCremiLabels.LOG.info("Finished interpolating {}/{} sections: {} in {} seconds", count, total, i, TimeUnit.SECONDS.convert(sw.nanoTime(), TimeUnit.NANOSECONDS)) }
 			localSections
 		} ))
 		counter.incrementTotal()
