@@ -48,7 +48,7 @@ fun main(vararg args: String)
 
 	val s = DiamondShape(1)
 	val uf = LongFunction<UnionFind> { LongHashMapUnionFind() }
-	val id = ConnectedComponentAnalysis.IdForPixel.fromIntervalIndexerWithInterval<UnsignedIntType>(mask)
+	val id = ConnectedComponentAnalysis.idFromIntervalIndexer<UnsignedIntType>(mask)
 
 	ConnectedComponentAnalysis.connectedComponents(overlap1, Views.translate(l21, *m1), s, uf, id, LongUnaryOperator{ it + 1 })
 	ConnectedComponentAnalysis.connectedComponents(overlap2, Views.translate(l22, *m2), s, uf, id, LongUnaryOperator{ it + 1 })
