@@ -80,6 +80,7 @@
 
 		<license.licenseName>bsd_2</license.licenseName>
 		<license.copyrightOwners>Stephan Saalfeld</license.copyrightOwners>
+		<main.class>org.janelia.saalfeldlab.labels.SandBoxKt</main.class>
 	</properties>
 
 	<repositories>
@@ -143,6 +144,11 @@
 			<artifactId>n5-hdf5</artifactId>
 			<version>1.0.2</version>
 		</dependency>
+		<dependency>
+			<groupId>info.picocli</groupId>
+			<artifactId>picocli</artifactId>
+			<version>3.5.2</version>
+		</dependency>
 
 		<!-- test -->
 		<dependency>
@@ -152,5 +158,22 @@
 		</dependency>
 
 	</dependencies>
+
+	<build>
+		<plugins>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-jar-plugin</artifactId>
+				<configuration>
+					<archive>
+						<manifest>
+							<!--<addClasspath>true</addClasspath>-->
+							<mainClass>${main.class}</mainClass>
+						</manifest>
+					</archive>
+				</configuration>
+			</plugin>
+		</plugins>
+	</build>
 
 </project>
