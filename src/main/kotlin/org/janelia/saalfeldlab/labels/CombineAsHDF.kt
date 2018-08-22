@@ -15,11 +15,9 @@ import java.util.stream.StreamSupport
 
 private val USER_HOME = System.getProperty("user.home")
 
-public class CombineAsHDF
-{
+class CombineAsHDF {
 	companion object {
-	    fun run(args: Array<String>)
-		{
+		fun run(args: Array<String>) {
 			val groundTruthContainer = "$USER_HOME/local/tmp/sample_A_padded_20160501-interpolated-labels-2-additional-sections.n5"
 			val groundTruthDataset = "volumes/labels/neuron_ids"
 			val grundTruthN5 = N5FSReader(groundTruthContainer)
