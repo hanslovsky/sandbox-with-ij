@@ -34,7 +34,7 @@ public class CombineAsHDF
 
 			val voxelSizeFactor = 3.0
 			val groundTruthResolution = DoubleStream.of(40.0 / voxelSizeFactor, 4.0, 4.0).map { it * voxelSizeFactor }.toArray()
-			val groundTruthOffset = DoubleStream.of(1520.0 / voxelSizeFactor, 3644.0, 3644.0).map { it * voxelSizeFactor }.toArray()
+			val groundTruthOffset = DoubleStream.of(1520.0, 3644.0, 3644.0).map { it * voxelSizeFactor }.toArray()
 
 			val rawResolution = DoubleStream.of(40.0, 4.0, 4.0).map { it * voxelSizeFactor }.toArray()
 			val rawOffset = doubleArrayOf(0.0, 0.0, 0.0)
