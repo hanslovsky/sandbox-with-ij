@@ -27,7 +27,9 @@ private class CmdLineParameters {
 }
 
 private enum class Endpoint(val run: (Array<String>) -> Unit, val commandName: String) {
-	COMBINE_AS_HDF(CombineAsHDF.Companion::run, "combine-as-hdf");
+	COMBINE_AS_HDF(CombineAsHDF.Companion::run, "combine-as-hdf"),
+	DOWNSAMPLE_WTA( { WinnerTakesAllDownsamplingExample.downsample() }, "downsample-wta")
+	;
 }
 
 private class EndpointConverter: CommandLine.ITypeConverter<Endpoint>

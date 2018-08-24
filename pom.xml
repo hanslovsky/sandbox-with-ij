@@ -149,6 +149,10 @@
 			<artifactId>picocli</artifactId>
 			<version>3.5.2</version>
 		</dependency>
+		<dependency>
+			<groupId>sc.fiji</groupId>
+			<artifactId>bigdataviewer-vistools</artifactId>
+		</dependency>
 
 		<!-- test -->
 		<dependency>
