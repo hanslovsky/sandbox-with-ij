@@ -63,7 +63,7 @@ class CombineAsHDF {
 
 			val outputDir = "/groups/saalfeld/home/hanslovskyp/data/cremi/training"
 			File(outputDir).mkdirs()
-			val targetContainer = "$outputDir/sample_A_padded_20160501-2-additional-sections.h5"
+			val targetContainer = "$outputDir/sample_A_padded_20160501-2-additional-sections-fixed-offset.h5"
 			LOG.info("target container: ${targetContainer}")
 			val targetN5 = N5HDF5Writer(targetContainer, 64, 64, 64)
 			targetN5.createDataset(rawDataset, rawAttributes)
@@ -72,8 +72,8 @@ class CombineAsHDF {
 			val es = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 3)
 			val sw = StopWatch()
 			val downScaledDim = longArrayOf(
-					Math.ceil(groundTruth.dimension(0) / voxelSizeFactor).toLong(),
-					Math.ceil(groundTruth.dimension(1) / voxelSizeFactor).toLong())
+					Math.ceil(groundTruth.dimension(0) / scaleFactor.toDouble()).toLong(),
+					Math.ceil(groundTruth.dimension(1) / scaleFactor.toDouble()).toLong())
 
 			sw.start()
 			val downsampledSectionFutures = LongStream
