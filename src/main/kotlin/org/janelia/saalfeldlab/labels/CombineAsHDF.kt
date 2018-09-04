@@ -110,8 +110,8 @@ class CombineAsHDF {
 			downsampledResolution[2] = downsampledResolution[2] * scaleFactor
 			val downSampledOffset = groundTruthOffset.clone()
 			// TODO how to set correct offset? Is this the right thing to do?
-			downSampledOffset[1] = downSampledOffset[1] - downsampledResolution[1] / scaleFactor.toDouble()
-			downSampledOffset[2] = downSampledOffset[2] - downsampledResolution[2] / scaleFactor.toDouble()
+			downSampledOffset[1] = downSampledOffset[1] + downsampledResolution[1] / scaleFactor.toDouble()
+			downSampledOffset[2] = downSampledOffset[2] + downsampledResolution[2] / scaleFactor.toDouble()
 
 			sw.start()
 			N5Utils.save(downsampled, targetN5, downsampledDataset, downsampledAttributes.blockSize, downsampledAttributes.compression, es)
