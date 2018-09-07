@@ -13,24 +13,19 @@ import java.lang.invoke.MethodHandles
 import java.util.*
 
 
-class MixedTransformComponentMappingTest {
+class PermutationTransformTest {
 
 	companion object {
 
 		val LOG = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass())!!
 
 		fun <T> permute(rai: RandomAccessibleInterval<T>, indicesLookupFromSourceSpace: IntArray): RandomAccessibleInterval<T> {
-			val tf = MixedTransform(rai.numDimensions(), rai.numDimensions())
-			tf.setComponentMapping(indicesLookupFromSourceSpace)
-			val view = MixedTransformView(rai, tf)
-			val bb = tf.transform(BoundingBox(Intervals.minAsLongArray(rai), Intervals.maxAsLongArray(rai)))
-			bb.orderMinMax()
+			val tf = PermuteCoordinateAxesTransform(*indicesLookupFromSourceSpace)
+			val view = TransformView(rai, tf)
 			val min = LongArray(rai.numDimensions())
 			val max = LongArray(rai.numDimensions())
-			Arrays.setAll(min) { rai.min(indicesLookupFromSourceSpace[it]) }
-			Arrays.setAll(max) { rai.max(indicesLookupFromSourceSpace[it]) }
-//			(0 until min.size).forEach { min[indicesLookupFromSourceSpace[it]] = rai.min(it) }
-//			(0 until max.size).forEach { max[indicesLookupFromSourceSpace[it]] = rai.max(it) }
+			tf.applyInverse(min, Intervals.minAsLongArray(rai))
+			tf.applyInverse(max, Intervals.maxAsLongArray(rai))
 			return Views.interval(view, min, max)
 		}
 	}
@@ -38,14 +33,14 @@ class MixedTransformComponentMappingTest {
 
 fun main(args: Array<String>) {
 
-	val log = MixedTransformComponentMappingTest.LOG;
-	val dims = longArrayOf(4, 5, 6)
+	val log = PermutationTransformTest.LOG;
+	val dims = longArrayOf(1, 2, 3)
 	val rng = Random(100L)
 	val img = ArrayImgs.longs(*dims)
 	img.forEach { it.integer = rng.nextInt(1024) }
 
 	val permutation = intArrayOf(2, 0, 1)
-	val permuted = MixedTransformComponentMappingTest.permute(img, permutation)
+	val permuted = PermutationTransformTest.permute(img, permutation)
 
 	log.info("data:             {}", img.update(null).currentStorageArray)
 	log.info("permutation:      {}", permutation)
@@ -56,7 +51,13 @@ fun main(args: Array<String>) {
 	val actualValues = TLongHashSet()
 	Views.flatIterable(permuted).forEach { actualValues.add(it.integerLong) }
 
-	log.info("values expected={}", expectedValues)
-	log.info("values actual  ={}", actualValues)
+	val expectedArray = expectedValues.toArray()
+	Arrays.sort(expectedArray)
+
+	val actualArray = actualValues.toArray()
+	Arrays.sort(actualArray)
+
+	log.info("values expected={}", expectedArray)
+	log.info("values actual  ={}", actualArray)
 
 }
