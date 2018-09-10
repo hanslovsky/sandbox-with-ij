@@ -18,16 +18,16 @@ import java.util.Random;
 
 public class MixedTransformComponentMappingTestJava {
 
-		private static final Logger LOG = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
+	private static final Logger LOG = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 
-		private static <T> RandomAccessibleInterval<T> permute(RandomAccessibleInterval<T> rai, int[] indicesLookupFromSourceSpace) {
-			final MixedTransform tf = new MixedTransform(rai.numDimensions(), rai.numDimensions());
-			tf.setComponentMapping(indicesLookupFromSourceSpace);
-			final MixedTransformView<T>view = new MixedTransformView(rai, tf);
-			final BoundingBox bb = tf.transform(new BoundingBox(Intervals.minAsLongArray(rai), Intervals.maxAsLongArray(rai)));
-			bb.orderMinMax();
-			return Views.interval(view, new FinalInterval(bb.corner1, bb.corner2));
-		}
+	private static <T> RandomAccessibleInterval<T> permute(RandomAccessibleInterval<T> rai, int[] indicesLookupFromSourceSpace) {
+		final MixedTransform tf = new MixedTransform(rai.numDimensions(), rai.numDimensions());
+		tf.setComponentMapping(indicesLookupFromSourceSpace);
+		final MixedTransformView<T>view = new MixedTransformView(rai, tf);
+		final BoundingBox bb = tf.transform(new BoundingBox(Intervals.minAsLongArray(rai), Intervals.maxAsLongArray(rai)));
+		bb.orderMinMax();
+		return Views.interval(view, new FinalInterval(bb.corner1, bb.corner2));
+	}
 
 	public static void main(String[] args) {
 		final long[] dims = {1, 2, 3};
