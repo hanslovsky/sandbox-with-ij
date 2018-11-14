@@ -12,7 +12,9 @@ import net.imglib2.img.array.ArrayImgFactory
 import net.imglib2.img.array.ArrayImgs
 import net.imglib2.type.numeric.ARGBType
 import net.imglib2.type.numeric.IntegerType
+import net.imglib2.type.numeric.integer.ByteType
 import net.imglib2.type.numeric.integer.LongType
+import net.imglib2.type.numeric.integer.UnsignedByteType
 import net.imglib2.type.numeric.real.DoubleType
 import net.imglib2.view.Views
 import java.util.*

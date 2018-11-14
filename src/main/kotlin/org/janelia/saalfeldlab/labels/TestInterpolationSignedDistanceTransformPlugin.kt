@@ -50,17 +50,17 @@ private fun <I : IntegerType<I>> withRandomColors(
 class TestInterpolationSignedDistanceTransformPlugin: Command
 {
 
-	@Parameter
+	@Parameter(label="img1", description = "WAS MAN")
 	var rai1: RandomAccessibleInterval<out IntegerType<*>>? = null
 
-	@Parameter
+	@Parameter(label="img2", description = "WAS MAN")
 	var rai2: RandomAccessibleInterval<out IntegerType<*>>? = null
 
 	@Parameter(label="weight", min="0.0", max="1.0")
 	var weight: Double = 0.5
 
 	@Parameter(label="background")
-	var background: Long = 0L
+	var background: Long = 0
 
 	@Parameter
 	var display: DisplayService? = null
@@ -69,10 +69,14 @@ class TestInterpolationSignedDistanceTransformPlugin: Command
 	var log: LogService? = null
 
 	override fun run() {
+		val label = getAnnotationLabel(this, "weight")
+		println("LOL LABEL $label")
 		val rai1 = this.rai1!!
 		val rai2 = this.rai2!!
 		val display = this.display!!
 		val log = this.log!!
+		val background = this.background.toLong()
+		val weight = this.weight.toDouble()
 		val ra1 = rai1.randomAccess()
 		val ra2 = rai2.randomAccess()
 		rai1.min(ra1)
@@ -90,7 +94,7 @@ class TestInterpolationSignedDistanceTransformPlugin: Command
 					ArrayImgFactory(DoubleType()),
 					filler,
 					weightForFiller = { weight },
-					background = this.background
+					background = background
 			)
 
 			display.createDisplay("interpolated", filler)
@@ -99,6 +103,16 @@ class TestInterpolationSignedDistanceTransformPlugin: Command
 			log.warn("Do not understand types ${i1::class.java} and ${i2::class.java}")
 		}
 	}
+
+private fun getAnnotationLabel(obj: Any, field: String) : String?
+{
+	val field = obj::class.java.getDeclaredField(field)
+	val annotation = field.getAnnotation(Parameter::class.java)
+	val label = annotation?.label
+	println("field=`$field' annotation=`$annotation' -- label=`$label'")
+	return label
+}
+
 
 }
 
