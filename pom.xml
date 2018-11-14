@@ -60,14 +60,14 @@
 	</contributors>
 
 	<scm>
-		<connection>scm:git:git://github.com/saalfeldlab/label-utilities-spark</connection>
-		<developerConnection>scm:git:git@github.com:saalfeldlab/label-utilities-spark</developerConnection>
+		<connection>scm:git:git://github.com/hanslovsky/sandbox-with-ij</connection>
+		<developerConnection>scm:git:git@github.com:hanslovsky/sandbox-with-ij</developerConnection>
 		<tag>HEAD</tag>
-		<url>https://github.com/saalfeldlab/label-utilities-spark</url>
+		<url>https://github.com/hanslovsky/sandbox-with-ij</url>
 	</scm>
 	<issueManagement>
 		<system>GitHub Issues</system>
-		<url>https://github.com/saalfeldlab/label-utilities-spark/issues</url>
+		<url>https://github.com/hanslovsky/sandbox-with-ij/issues</url>
 	</issueManagement>
 	<ciManagement>
 		<system>None</system>
@@ -79,7 +79,7 @@
 		<allowedDuplicateClasses>*</allowedDuplicateClasses>
 
 		<license.licenseName>bsd_2</license.licenseName>
-		<license.copyrightOwners>Stephan Saalfeld</license.copyrightOwners>
+		<license.copyrightOwners>Philipp Hanslovsky</license.copyrightOwners>
 		<main.class>org.janelia.saalfeldlab.labels.SandBoxKt</main.class>
 	</properties>
 
