@@ -27,10 +27,12 @@ class MixedTransformComponentMappingTest {
 			bb.orderMinMax()
 			val min = LongArray(rai.numDimensions())
 			val max = LongArray(rai.numDimensions())
-			Arrays.setAll(min) { rai.min(indicesLookupFromSourceSpace[it]) }
-			Arrays.setAll(max) { rai.max(indicesLookupFromSourceSpace[it]) }
-//			(0 until min.size).forEach { min[indicesLookupFromSourceSpace[it]] = rai.min(it) }
-//			(0 until max.size).forEach { max[indicesLookupFromSourceSpace[it]] = rai.max(it) }
+			val inversePermutation = IntArray(indicesLookupFromSourceSpace.size)
+			inversePermutation.indices.forEach { inversePermutation[indicesLookupFromSourceSpace[it]] = it }
+			val inverseTf = tf //MixedTransform(rai.numDimensions(), rai.numDimensions())
+//			inverseTf.setComponentMapping(inversePermutation)
+			inverseTf.apply(Intervals.minAsLongArray(rai), min)
+			inverseTf.apply(Intervals.maxAsLongArray(rai), max)
 			return Views.interval(view, min, max)
 		}
 	}
@@ -39,13 +41,14 @@ class MixedTransformComponentMappingTest {
 fun main(args: Array<String>) {
 
 	val log = MixedTransformComponentMappingTest.LOG;
-	val dims = longArrayOf(4, 5, 6)
+	val dims = longArrayOf(1, 2, 3)
 	val rng = Random(100L)
 	val img = ArrayImgs.longs(*dims)
 	img.forEach { it.integer = rng.nextInt(1024) }
 
 	val permutation = intArrayOf(2, 0, 1)
 	val permuted = MixedTransformComponentMappingTest.permute(img, permutation)
+	permuted.randomAccess()
 
 	log.info("data:             {}", img.update(null).currentStorageArray)
 	log.info("permutation:      {}", permutation)
@@ -56,7 +59,12 @@ fun main(args: Array<String>) {
 	val actualValues = TLongHashSet()
 	Views.flatIterable(permuted).forEach { actualValues.add(it.integerLong) }
 
-	log.info("values expected={}", expectedValues)
-	log.info("values actual  ={}", actualValues)
+	val expectedValuesArray = expectedValues.toArray()
+	val actualValuesArray = actualValues.toArray()
+	Arrays.sort(expectedValuesArray)
+	Arrays.sort(actualValuesArray)
+
+	log.info("values expected={}", expectedValuesArray)
+	log.info("values actual  ={}", actualValuesArray)
 
 }
