@@ -7,6 +7,7 @@ import net.imglib2.algorithm.labeling.affinities.ConnectedComponents
 import net.imglib2.algorithm.labeling.affinities.Watersheds
 import net.imglib2.converter.Converter
 import net.imglib2.converter.Converters
+import net.imglib2.img.array.ArrayImgFactory
 import net.imglib2.img.array.ArrayImgs
 import net.imglib2.img.display.imagej.ImageJFunctions
 import net.imglib2.type.logic.BitType
@@ -62,6 +63,9 @@ fun main(argv: Array<String>) {
 		@CommandLine.Option(names = arrayOf("--connected-components-dataset"), paramLabel = "CONNECTED_COMPONENTS", description = arrayOf("Path to connected components in OUTPUT_CONTAINER"))
 		var connectedComponents = "volumes/labels/connected_components"
 
+		@CommandLine.Option(names = arrayOf("--watersheds-dataset"), paramLabel = "WATERSHEDS", description = arrayOf("Path to watersheds in OUTPUT_CONTAINER"))
+		var watersheds = "volumes/labels/watersheds"
+
 		@CommandLine.Option(names = kotlin.arrayOf("--watershed-seeds-mask-dataset"), paramLabel = "WATERSHED_SEEDS_MASK", description = arrayOf("Path to watershed seeds mask in OUTPUT_CONTAINER"))
 		var watershedSeedsMask = "volumes/labels/watershed_seeds"
 
@@ -96,12 +100,27 @@ fun main(argv: Array<String>) {
 	val predictionDataset = args.connectedComponents
 	val threshold = args.threshold
 
-	val affinities = Views.collapseReal(
+	val affinitiesNotCollapsed =
 			if (args.invertAffinitiesAxis) Views.zeroMin(Views.invertAxis(N5Utils.open<FloatType>(n5in, affinitiesDataset), 3))
-			else N5Utils.open<FloatType>(n5in, affinitiesDataset))
+			else N5Utils.open<FloatType>(n5in, affinitiesDataset)
+
+	// TODO how to avoid looking outside interval?
+	steps.forEachIndexed { index, step ->
+		val slice = Views.hyperSlice(affinitiesNotCollapsed, affinitiesNotCollapsed.numDimensions() - 1, index.toLong())
+		val translatedSlice = Views.translate(slice, *step)
+		val c = Views.iterable(translatedSlice).cursor()
+		while (c.hasNext()) {
+			c.fwd()
+			if (!Intervals.contains(slice, c))
+				c.get().setReal(Double.NaN)
+		}
+
+	}
+
+	val affinities = Views.collapseReal(affinitiesNotCollapsed)
 	val mask = ConstantUtils.constantRandomAccessibleInterval(BoolType(true), affinities.numDimensions(), affinities)
 	val labels = ArrayImgs.unsignedLongs(*Intervals.dimensionsAsLongArray(affinities))
-	labels.forEach { it.set(-1L) }
+	labels.forEach { it.set(Label.INVALID) }
 	val unionFindMask = ArrayImgs.bits(*Intervals.dimensionsAsLongArray(affinities))
 	val maxId = ConnectedComponents.fromSymmetricAffinities(Views.extendValue(mask, BoolType(false)), affinities, labels, Views.extendZero(unionFindMask), threshold, *steps)
 
@@ -121,8 +140,8 @@ fun main(argv: Array<String>) {
 	val seeds = Watersheds.collectSeeds(watershedSeedsMask)
 
 	N5Utils.save(labels, n5out, args.watershedSeedsMask, args.blockSize, GzipCompression())
-	n5in.getAttribute(args.watershedSeedsMask, OFFSET_KEY, LongArray::class.java)?.let { n5out.setAttribute(predictionDataset, OFFSET_KEY, it) }
-	n5in.getAttribute(args.watershedSeedsMask, RESOLUTION_KEY, LongArray::class.java)?.let { n5out.setAttribute(predictionDataset, RESOLUTION_KEY, it) }
+	n5in.getAttribute(affinitiesDataset, OFFSET_KEY, LongArray::class.java)?.let { n5out.setAttribute(args.watershedSeedsMask, OFFSET_KEY, it) }
+	n5in.getAttribute(affinitiesDataset, RESOLUTION_KEY, LongArray::class.java)?.let { n5out.setAttribute(args.watershedSeedsMask, RESOLUTION_KEY, it) }
 
 	val seedsDataset = ArrayImgs.unsignedLongs(affinities.numDimensions().toLong(), seeds.size.toLong())
 	seeds.forEachIndexed { index, point ->
@@ -131,8 +150,18 @@ fun main(argv: Array<String>) {
 	}
 
 	N5Utils.save(seedsDataset, n5out, args.watershedSeeds, Intervals.dimensionsAsIntArray(seedsDataset), GzipCompression())
-	n5in.getAttribute(args.watershedSeeds, OFFSET_KEY, LongArray::class.java)?.let { n5out.setAttribute(predictionDataset, OFFSET_KEY, it) }
-	n5in.getAttribute(args.watershedSeeds, RESOLUTION_KEY, LongArray::class.java)?.let { n5out.setAttribute(predictionDataset, RESOLUTION_KEY, it) }
+	n5in.getAttribute(affinitiesDataset, OFFSET_KEY, LongArray::class.java)?.let { n5out.setAttribute(args.watershedSeeds, OFFSET_KEY, it) }
+	n5in.getAttribute(affinitiesDataset, RESOLUTION_KEY, LongArray::class.java)?.let { n5out.setAttribute(args.watershedSeeds, RESOLUTION_KEY, it) }
+
+
+	val symmetricAffinities = Watersheds.constructAffinities(affinitiesNotCollapsed, *steps, factory = ArrayImgFactory(FloatType()))
+	Watersheds.seededFromAffinities(Views.collapseReal(symmetricAffinities), labels, seeds, *steps)
+
+	N5Utils.save(labels, n5out, args.watersheds, args.blockSize, GzipCompression())
+	n5in.getAttribute(affinitiesDataset, OFFSET_KEY, LongArray::class.java)?.let { n5out.setAttribute(args.watersheds, OFFSET_KEY, it) }
+	n5in.getAttribute(affinitiesDataset, RESOLUTION_KEY, LongArray::class.java)?.let { n5out.setAttribute(args.watersheds, RESOLUTION_KEY, it) }
+	n5out.setAttribute(args.watersheds, MAX_ID_KEY, maxId)
+
 
 //	val colors = TLongIntHashMap()
 //	val rng = Random(100L)
