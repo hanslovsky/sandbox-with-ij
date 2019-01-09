@@ -34,5 +34,6 @@ fun main(args: Array<String>) {
 
 	ImageJ()
 	ImageJFunctions.show(colored)
+	ImageJFunctions.show(labels)
 
 }
