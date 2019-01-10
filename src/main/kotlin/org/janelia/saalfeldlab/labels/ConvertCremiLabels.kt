@@ -64,7 +64,7 @@ fun main(args: Array<String>) {
 	val es = Executors.newFixedThreadPool(40)
 	val futures = mutableListOf<Future<List<RandomAccessibleInterval<UnsignedLongType>>>>()
 
-	val stopWatch = StopWatch()
+	val stopWatch = StopWatch.createStopped()
 
 
 
@@ -73,8 +73,7 @@ fun main(args: Array<String>) {
 	for (i in zMin until zMax)
 	{
 		futures.add( es.submit(Callable{
-			val sw = StopWatch()
-			sw.start()
+			val sw = StopWatch.createAndStart()
 			val hs1 = Views.hyperSlice(img, 2, i)
 			val hs2 = Views.hyperSlice(img, 2, i + 1)
 			val fillers = InterpolateBetweenSections.makeFillers(numFillers, imgDim[0], imgDim[1])

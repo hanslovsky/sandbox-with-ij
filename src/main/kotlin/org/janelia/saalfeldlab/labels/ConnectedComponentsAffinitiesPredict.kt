@@ -1,30 +1,33 @@
 package org.janelia.saalfeldlab.labels
 
-import gnu.trove.map.hash.TLongIntHashMap
-import ij.ImageJ
 import net.imglib2.RandomAccessibleInterval
 import net.imglib2.algorithm.labeling.affinities.ConnectedComponents
 import net.imglib2.algorithm.labeling.affinities.Watersheds
-import net.imglib2.converter.Converter
 import net.imglib2.converter.Converters
 import net.imglib2.img.array.ArrayImgFactory
 import net.imglib2.img.array.ArrayImgs
-import net.imglib2.img.display.imagej.ImageJFunctions
+import net.imglib2.img.cell.CellImgFactory
 import net.imglib2.type.logic.BitType
 import net.imglib2.type.logic.BoolType
-import net.imglib2.type.numeric.ARGBType
-import net.imglib2.type.numeric.integer.UnsignedLongType
+import net.imglib2.type.numeric.integer.ByteType
 import net.imglib2.type.numeric.real.FloatType
 import net.imglib2.util.ConstantUtils
 import net.imglib2.util.Intervals
+import net.imglib2.util.StopWatch
 import net.imglib2.view.Views
 import org.janelia.saalfeldlab.n5.GzipCompression
+import org.janelia.saalfeldlab.n5.N5FSWriter
 import org.janelia.saalfeldlab.n5.hdf5.N5HDF5Writer
 import org.janelia.saalfeldlab.n5.imglib2.N5Utils
+import org.slf4j.LoggerFactory
 import picocli.CommandLine
+import java.lang.invoke.MethodHandles
+import java.nio.file.Files
+import java.nio.file.Paths
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.stream.Collectors
 import java.util.stream.Stream
-import kotlin.random.Random
 
 private val OFFSET_KEY = "offset"
 
@@ -38,11 +41,17 @@ private val THRESHOLD_KEY = "threshold"
 
 private val MAX_ID_KEY = "maxId"
 
+private val LOG = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass())
+
 private fun LongArray.invertValues(max: Long = 0): LongArray {
 	return LongArray(this.size, {max-this[it]})
 }
 
 fun main(argv: Array<String>) {
+
+	LOG.debug("Generating labels from affinities with these arguments {}", argv)
+
+	val totalStopWatch = StopWatch.createAndStart()
 
 	class Offset(vararg val offset: Long) {
 
@@ -91,11 +100,14 @@ fun main(argv: Array<String>) {
 			.registerConverter(Offset::class.java, { Offset(*Stream.of(*it.split(",").toTypedArray()).mapToLong(String::toLong).toArray()) })
 	cmdLine.parse(*argv)
 
+	val threadCount = AtomicInteger(0)
+	val saveExecutors = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() - 1, {Thread(it, "save-executor-${threadCount.incrementAndGet()}")})
+
 	val steps = Array(args.offsets.size, {args.offsets[it].offset})//longArrayOf(-1, -1, -1)
 	val inputContainer = args.inputContainer!!//"/home/hanslovskyp/local/tmp/batch_656001.hdf"
 	val outputContainer = args.outputContainer ?: inputContainer
-	val n5in = N5HDF5Writer(inputContainer)
-	val n5out = N5HDF5Writer(outputContainer)
+	val n5in = if (Files.isDirectory(Paths.get(inputContainer))) N5FSWriter(inputContainer) else N5HDF5Writer(inputContainer)
+	val n5out = if (Files.isDirectory(Paths.get(outputContainer))) N5FSWriter(outputContainer) else N5HDF5Writer(outputContainer)
 	val affinitiesDataset = args.affinities
 	val predictionDataset = args.connectedComponents
 	val threshold = args.threshold
@@ -118,13 +130,18 @@ fun main(argv: Array<String>) {
 	}
 
 	val affinities = Views.collapseReal(affinitiesNotCollapsed)
+	LOG.info("Generating connected components for affinities with dimensions {} ({} voxels)", Intervals.dimensionsAsLongArray(affinities), Intervals.numElements(affinities))
 	val mask = ConstantUtils.constantRandomAccessibleInterval(BoolType(true), affinities.numDimensions(), affinities)
 	val labels = ArrayImgs.unsignedLongs(*Intervals.dimensionsAsLongArray(affinities))
 	labels.forEach { it.set(Label.INVALID) }
 	val unionFindMask = ArrayImgs.bits(*Intervals.dimensionsAsLongArray(affinities))
+	val sw = StopWatch.createAndStart()
 	val maxId = ConnectedComponents.fromSymmetricAffinities(Views.extendValue(mask, BoolType(false)), affinities, labels, Views.extendZero(unionFindMask), threshold, *steps)
+	sw.stop()
+	LOG.info("Generated connected components in {} seconds", sw.seconds())
 
-	N5Utils.save(labels, n5out, predictionDataset, args.blockSize, GzipCompression())
+	sw.start()
+	N5Utils.save(labels, n5out, predictionDataset, args.blockSize, GzipCompression(), saveExecutors)
 
 	n5in.getAttribute(affinitiesDataset, OFFSET_KEY, LongArray::class.java)?.let { n5out.setAttribute(predictionDataset, OFFSET_KEY, it) }
 	n5in.getAttribute(affinitiesDataset, RESOLUTION_KEY, LongArray::class.java)?.let { n5out.setAttribute(predictionDataset, RESOLUTION_KEY, it) }
@@ -132,14 +149,20 @@ fun main(argv: Array<String>) {
 	n5out.setAttribute(predictionDataset, SOURCE_DATASET_KEY, affinitiesDataset)
 	n5out.setAttribute(predictionDataset, THRESHOLD_KEY, threshold)
 	n5out.setAttribute(predictionDataset, MAX_ID_KEY, maxId)
+	sw.stop()
+	LOG.info("Saved connected components in {} seconds", sw.seconds())
 
 
 	val invertedSteps = Stream.of(*steps).map {it.invertValues()}.collect(Collectors.toList()).toTypedArray()
 	val watershedSeedsMask = ArrayImgs.bits(*Intervals.dimensionsAsLongArray(unionFindMask))
+	sw.start()
 	Watersheds.seedsFromMask(Views.extendValue(unionFindMask, BitType(true)), watershedSeedsMask, *(steps + invertedSteps))
 	val seeds = Watersheds.collectSeeds(watershedSeedsMask)
+	sw.stop()
+	LOG.info("Generated watershed seeds in {} seconds", sw.seconds())
 
-	N5Utils.save(labels, n5out, args.watershedSeedsMask, args.blockSize, GzipCompression())
+	sw.start()
+	N5Utils.save(Converters.convert(watershedSeedsMask as RandomAccessibleInterval<BitType>, {s,t -> if (s.get()) t.setOne() else t.setZero()}, ByteType()), n5out, args.watershedSeedsMask, args.blockSize, GzipCompression(), saveExecutors)
 	n5in.getAttribute(affinitiesDataset, OFFSET_KEY, LongArray::class.java)?.let { n5out.setAttribute(args.watershedSeedsMask, OFFSET_KEY, it) }
 	n5in.getAttribute(affinitiesDataset, RESOLUTION_KEY, LongArray::class.java)?.let { n5out.setAttribute(args.watershedSeedsMask, RESOLUTION_KEY, it) }
 
@@ -149,18 +172,37 @@ fun main(argv: Array<String>) {
 		(0 until point.numDimensions()).forEach { c.next().set(point.getLongPosition(it)) }
 	}
 
-	N5Utils.save(seedsDataset, n5out, args.watershedSeeds, Intervals.dimensionsAsIntArray(seedsDataset), GzipCompression())
+	N5Utils.save(seedsDataset, n5out, args.watershedSeeds, Intervals.dimensionsAsIntArray(seedsDataset), GzipCompression(), saveExecutors)
 	n5in.getAttribute(affinitiesDataset, OFFSET_KEY, LongArray::class.java)?.let { n5out.setAttribute(args.watershedSeeds, OFFSET_KEY, it) }
 	n5in.getAttribute(affinitiesDataset, RESOLUTION_KEY, LongArray::class.java)?.let { n5out.setAttribute(args.watershedSeeds, RESOLUTION_KEY, it) }
+	sw.stop()
+	LOG.info("Saved watershed seeds in {} seconds", sw.seconds())
 
-
-	val symmetricAffinities = Watersheds.constructAffinities(affinitiesNotCollapsed, *steps, factory = ArrayImgFactory(FloatType()))
+	sw.start()
+	val symmetricAffinitiesFactory =
+			if (Intervals.numElements(affinitiesNotCollapsed) * 2 <= Integer.MAX_VALUE)
+				ArrayImgFactory(FloatType()) else
+				CellImgFactory(FloatType(), *(args.blockSize + intArrayOf(affinities.dimension(3).toInt())))
+	val symmetricAffinities = Watersheds.constructAffinities(affinitiesNotCollapsed, *steps, factory = symmetricAffinitiesFactory)
+	sw.stop()
+	LOG.info("Constructed symmetric affinities in {} seconds", sw.seconds())
+	sw.start()
 	Watersheds.seededFromAffinities(Views.collapseReal(symmetricAffinities), labels, seeds, *steps)
+	sw.stop()
+	LOG.info("Ran seeded watersheds in {} seconds", sw.seconds())
 
-	N5Utils.save(labels, n5out, args.watersheds, args.blockSize, GzipCompression())
+	sw.start()
+	N5Utils.save(labels, n5out, args.watersheds, args.blockSize, GzipCompression(), saveExecutors)
 	n5in.getAttribute(affinitiesDataset, OFFSET_KEY, LongArray::class.java)?.let { n5out.setAttribute(args.watersheds, OFFSET_KEY, it) }
 	n5in.getAttribute(affinitiesDataset, RESOLUTION_KEY, LongArray::class.java)?.let { n5out.setAttribute(args.watersheds, RESOLUTION_KEY, it) }
 	n5out.setAttribute(args.watersheds, MAX_ID_KEY, maxId)
+	sw.stop()
+	LOG.info("Saved watersheds in {} seconds", sw.seconds())
+
+	totalStopWatch.stop()
+	LOG.info("Total run time was {} seconds", sw.seconds())
+
+	saveExecutors.shutdown()
 
 
 //	val colors = TLongIntHashMap()

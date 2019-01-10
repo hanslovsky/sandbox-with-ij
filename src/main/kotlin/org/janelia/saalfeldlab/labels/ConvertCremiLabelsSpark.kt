@@ -113,7 +113,7 @@ fun main(mainArgs: Array<String>) {
 	val zMin = max(args.zMax, img.min(2))
 	val zMax = min(args.zMin, img.max(2))
 
-	val stopWatch = StopWatch()
+	val stopWatch = StopWatch.createStopped()
 	val conf = SparkConf().setAppName("Upsample cremi labels")
 
 	val targetDims = longArrayOf(img.dimension(0), img.dimension(1), (zMin - zMax) * (1 + numFillers) + 1)

@@ -87,6 +87,7 @@
 		<kotlin.compiler.jvmTarget>1.8</kotlin.compiler.jvmTarget>
 		<kotlin.compiler.incremental>true</kotlin.compiler.incremental>
 		<spark.version>2.3.1</spark.version>
+		<imglib2.version>5.6.3</imglib2.version>
 	</properties>
 
 	<repositories>

@@ -70,7 +70,7 @@ class CombineAsHDF {
 			targetN5.createDataset(groundTruthDataset, groundTruthAttributes)
 
 			val es = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 3)
-			val sw = StopWatch()
+			val sw = StopWatch.createAndStart()
 			val downScaledDim = longArrayOf(
 					Math.ceil(groundTruth.dimension(0) / scaleFactor.toDouble()).toLong(),
 					Math.ceil(groundTruth.dimension(1) / scaleFactor.toDouble()).toLong())
