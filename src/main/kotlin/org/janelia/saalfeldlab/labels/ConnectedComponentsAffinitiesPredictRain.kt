@@ -1,27 +1,25 @@
 package org.janelia.saalfeldlab.labels
 
-import gnu.trove.map.hash.TIntIntHashMap
 import gnu.trove.map.hash.TLongIntHashMap
 import ij.ImageJ
 import net.imglib2.RandomAccessibleInterval
-import net.imglib2.algorithm.labeling.affinities.ConnectedComponents
-import net.imglib2.algorithm.labeling.affinities.Rain
+import net.imglib2.algorithm.gauss3.Gauss3
 import net.imglib2.algorithm.labeling.affinities.Watersheds
-import net.imglib2.algorithm.util.unionfind.IntArrayUnionFind
 import net.imglib2.converter.Converter
 import net.imglib2.converter.Converters
+import net.imglib2.img.ImgFactory
 import net.imglib2.img.array.ArrayImgFactory
 import net.imglib2.img.array.ArrayImgs
 import net.imglib2.img.cell.CellImgFactory
 import net.imglib2.img.display.imagej.ImageJFunctions
-import net.imglib2.type.logic.BitType
+import net.imglib2.loops.LoopBuilder
 import net.imglib2.type.numeric.ARGBType
+import net.imglib2.type.numeric.RealType
 import net.imglib2.type.numeric.integer.UnsignedLongType
 import net.imglib2.type.numeric.real.FloatType
-import net.imglib2.util.ConstantUtils
-import net.imglib2.util.IntervalIndexer
 import net.imglib2.util.Intervals
 import net.imglib2.util.StopWatch
+import net.imglib2.util.Util
 import net.imglib2.view.Views
 import org.janelia.saalfeldlab.n5.N5FSWriter
 import org.janelia.saalfeldlab.n5.hdf5.N5HDF5Writer
@@ -33,6 +31,7 @@ import java.nio.file.Files
 import java.nio.file.Paths
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.function.BiConsumer
 import java.util.function.BiPredicate
 import java.util.function.Predicate
 import java.util.stream.Collectors
@@ -126,59 +125,100 @@ fun main(argv: Array<String>) {
 			if (args.invertAffinitiesAxis) Views.zeroMin(Views.invertAxis(N5Utils.open<FloatType>(n5in, affinitiesDataset), 3))
 			else N5Utils.open<FloatType>(n5in, affinitiesDataset)
 
+	val affinitiesSmoothed = ArrayImgFactory(FloatType()).create(affinitiesNotCollapsed)
+	for (channel in 0 until affinitiesSmoothed.dimension(affinitiesSmoothed.numDimensions() - 1)) {
+		println("$channel")
+		Gauss3.gauss(1.0, Views.extendBorder(Views.hyperSlice(affinitiesNotCollapsed, affinitiesNotCollapsed.numDimensions() - 1, channel.toLong())), Views.hyperSlice(affinitiesSmoothed, affinitiesSmoothed.numDimensions() - 1, channel.toLong()))
+	}
+
 	// TODO how to avoid looking outside interval?
 	steps.forEachIndexed { index, step ->
-		val slice = Views.hyperSlice(affinitiesNotCollapsed, affinitiesNotCollapsed.numDimensions() - 1, index.toLong())
+		val slice = Views.hyperSlice(affinitiesSmoothed, affinitiesSmoothed.numDimensions() - 1, index.toLong())
 		val translatedSlice = Views.translate(slice, *step)
 		val c = Views.iterable(translatedSlice).cursor()
 		while (c.hasNext()) {
 			c.fwd()
-			if (!Intervals.contains(slice, c))
+			if (Intervals.contains(slice, c))
+				c.get().setReal(Math.min(1.0, Math.max(0.0, c.get().realDouble)))
+			else
 				c.get().setReal(Double.NaN)
 		}
 
 	}
 
-	val affinities = Views.collapseReal(affinitiesNotCollapsed)
+	val affinities = Views.collapseReal(affinitiesSmoothed)
 
 
-	val invertedSteps = Stream.of(*steps).map {it.invertValues()}.collect(Collectors.toList()).toTypedArray()
+	val invertedSteps = Stream.of(*steps).map {it.invertValues()}.collect(Collectors.toList()).toTypedArray().reversedArray()
 	val symmetricAffinitiesFactory =
-			if (Intervals.numElements(affinitiesNotCollapsed) * 2 <= Integer.MAX_VALUE)
+			if (Intervals.numElements(affinitiesSmoothed) * 2 <= Integer.MAX_VALUE)
 				ArrayImgFactory(FloatType()) else
 				CellImgFactory(FloatType(), *(args.blockSize + intArrayOf(affinities.dimension(3).toInt())))
-	val symmetricAffinities = Watersheds.constructAffinities(affinitiesNotCollapsed, *steps, factory = symmetricAffinitiesFactory)
 
-	val (parents, roots) = Rain.watershed(
+	fun <A: RealType<A>> constructAffinitiesWithCopy(
+			affinities: RandomAccessibleInterval<A>,
+			factory: ImgFactory<A>,
+			vararg offsets: LongArray): RandomAccessibleInterval<A> {
+		val dims = Intervals.dimensionsAsLongArray(affinities)
+		dims[dims.size - 1] = dims[dims.size - 1] * 2
+		val symmetricAffinities = factory.create(*dims)
+
+		LoopBuilder
+				.setImages(affinities, Views.interval(symmetricAffinities, Views.zeroMin(affinities)))
+				.forEachPixel(BiConsumer { t, u ->  u.set(t)})
+
+		val nanExtension = Util.getTypeFromInterval(affinities).createVariable()
+		nanExtension.setReal(Double.NaN)
+
+		val zeroMinAffinities = if (Views.isZeroMin(affinities)) affinities else Views.zeroMin(affinities)
+
+		for (offsetIndex in 0 until offsets.size) {
+			val targetSlice = Views.hyperSlice(symmetricAffinities, dims.size - 1, offsets.size + offsets.size - 1 - offsetIndex.toLong())
+			val sourceSlice = Views.interval(Views.translate(
+					Views.extendValue(Views.hyperSlice(zeroMinAffinities, dims.size - 1, offsetIndex.toLong()), nanExtension),
+					*offsets[offsetIndex]), targetSlice)
+			LoopBuilder
+					.setImages(sourceSlice, targetSlice)
+					.forEachPixel(BiConsumer { t, u -> u.set(t) })
+		}
+
+		return if (Views.isZeroMin(affinities)) symmetricAffinities else Views.translate(symmetricAffinities, *Intervals.minAsLongArray(affinities))
+	}
+
+//	val symmetricAffinities = Watersheds.constructAffinities(affinitiesSmoothed, *steps, factory = symmetricAffinitiesFactory)
+	val symmetricAffinities = constructAffinitiesWithCopy(affinitiesSmoothed, offsets = *steps, factory = symmetricAffinitiesFactory)
+
+	val (parents, roots) = Watersheds.letItRain(
 			Views.collapseReal(symmetricAffinities),
 			isValid = Predicate {!it.realDouble.isNaN()},
-			compare = BiPredicate { t, u -> t.realDouble > u.realDouble },
-			worstVal = FloatType(Float.NEGATIVE_INFINITY),
+			isBetter = BiPredicate { t, u -> t.realDouble > u.realDouble },
+			worst = FloatType(Float.NEGATIVE_INFINITY),
 			offsets = *(steps + invertedSteps))
 
-	val labels = ArrayImgs.unsignedLongs(*Intervals.dimensionsAsLongArray(Views.collapseReal(symmetricAffinities)))
+//	val labels = ArrayImgs.unsignedLongs(*Intervals.dimensionsAsLongArray(Views.collapseReal(symmetricAffinities)))
 
-	val um = ArrayImgs.bits(*Intervals.dimensionsAsLongArray(Views.collapseReal(affinitiesNotCollapsed)))
+//	val um = ArrayImgs.bits(*Intervals.dimensionsAsLongArray(Views.collapseReal(affinitiesSmoothed)))
+//
+//	val uf = IntArrayUnionFind(parents.size)
+//	ConnectedComponents.unionFindFromSymmetricAffinities(
+//			ConstantUtils.constantRandomAccessible(BitType(true), 3),
+//			Views.collapseReal(affinitiesSmoothed),
+//			Views.extendValue(um, BitType(false)),
+//			uf,
+//			0.9,
+//			*steps,
+//			toIndex = { IntervalIndexer.positionToIndex(it, um)}
+//			)
+//	parents.forEachIndexed { index, pointer -> uf.join(uf.findRoot(index), uf.findRoot(pointer)) }
+//
+//	val sizes = TIntIntHashMap()
+//	for (index in 0 until parents.size)
+//		sizes.put(uf.findRoot(index), sizes[uf.findRoot(index)] + 1)
+//
+//	val sizeThreshold = 10
 
-	val uf = IntArrayUnionFind(parents.size)
-	ConnectedComponents.unionFindFromSymmetricAffinities(
-			ConstantUtils.constantRandomAccessible(BitType(true), 3),
-			Views.collapseReal(affinitiesNotCollapsed),
-			Views.extendValue(um, BitType(false)),
-			uf,
-			0.9,
-			*steps,
-			toIndex = { IntervalIndexer.positionToIndex(it, um)}
-			)
-	parents.forEachIndexed { index, pointer -> uf.join(uf.findRoot(index), uf.findRoot(pointer)) }
-
-	val sizes = TIntIntHashMap()
-	for (index in 0 until parents.size)
-		sizes.put(uf.findRoot(index), sizes[uf.findRoot(index)] + 1)
-
-	val sizeThreshold = 10
-
-	labels.forEachIndexed { index, p -> val r = uf.findRoot(index); p.set(if (sizes[r] > sizeThreshold) r.toLong() else Label.INVALID) }
+//	labels.forEachIndexed { index, p -> val r = uf.findRoot(index); p.set(if (sizes[r] > sizeThreshold) r.toLong() else Label.INVALID) }
+	val labels = ArrayImgs.unsignedLongs(parents, *Intervals.dimensionsAsLongArray(Views.collapseReal(symmetricAffinities)))
 
 	val colors = TLongIntHashMap()
 	val rng = Random(100L)
