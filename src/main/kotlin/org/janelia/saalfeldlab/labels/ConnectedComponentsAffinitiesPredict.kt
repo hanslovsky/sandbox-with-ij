@@ -204,14 +204,4 @@ fun main(argv: Array<String>) {
 
 	saveExecutors.shutdown()
 
-
-//	val colors = TLongIntHashMap()
-//	val rng = Random(100L)
-//	val converter: Converter<UnsignedLongType, ARGBType> = Converter { s, t -> if (!colors.contains(s.integerLong)) colors.put(s.integerLong, rng.nextInt()); t.set(colors.get(s.integerLong)) }
-//	val colored = Converters.convert(labels as RandomAccessibleInterval<UnsignedLongType>, converter, ARGBType())
-//
-//	ImageJ()
-//	ImageJFunctions.show(colored)
-//	ImageJFunctions.show(watershedSeedsMask)
-
 }
