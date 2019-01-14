@@ -37,12 +37,14 @@ import picocli.CommandLine
 import java.lang.invoke.MethodHandles
 import java.nio.file.Files
 import java.nio.file.Paths
+import java.util.Arrays
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.function.BiConsumer
 import java.util.function.BiPredicate
 import java.util.function.LongUnaryOperator
 import java.util.function.Predicate
+import java.util.function.ToLongFunction
 import java.util.stream.Collectors
 import java.util.stream.Stream
 import kotlin.random.Random
@@ -137,7 +139,7 @@ fun main(argv: Array<String>) {
 		val slice = Views.hyperSlice(affinitiesSmoothed, affinitiesSmoothed.numDimensions() - 1, index.toLong())
 		step.forEachIndexed { index2, step2 ->
 			if (step2 != 0L) {
-				println("$index2 $step2 ${if (step2 > 0) slice.max(index2) + 1 - step2 else {slice.min(index2) - 1 - step2}}")
+//				println("$index2 $step2 ${if (step2 > 0) slice.max(index2) + 1 - step2 else {slice.min(index2) - 1 - step2}}")
 				Views
 						.hyperSlice(slice, index2, if (step2 > 0) slice.max(index2) + 1 - step2 else {slice.min(index2) - 1 - step2})
 						.forEach { it.setReal(Float.NaN) }
@@ -187,14 +189,13 @@ fun main(argv: Array<String>) {
 		return if (Views.isZeroMin(affinities)) symmetricAffinities else Views.translate(symmetricAffinities, *Intervals.minAsLongArray(affinities))
 	}
 
-//	val symmetricAffinities = Watersheds.constructAffinities(affinitiesSmoothed, *steps, factory = symmetricAffinitiesFactory)
-	val symmetricAffinities = constructAffinitiesWithCopy(affinitiesSmoothed, offsets = *steps, factory = symmetricAffinitiesFactory)
+	val symmetricAffinities = Watersheds.constructAffinities(affinitiesSmoothed, offsets=steps, order = IntArray(steps.size, {steps.size - 1 - it}), factory = symmetricAffinitiesFactory)
+//	val symmetricAffinities = constructAffinitiesWithCopy(affinitiesSmoothed, offsets = *steps, factory = symmetricAffinitiesFactory)
+//	println(Arrays.toString(Intervals.dimensionsAsLongArray(symmetricAffinities)))
+//	System.exit(123)
 
 
 	val labelsRAI = ArrayImgs.longs(*Intervals.dimensionsAsLongArray(Views.collapseReal(symmetricAffinities)));
-	val es = Executors.newFixedThreadPool(1)
-
-	val a = false
 
 	ImageJ()
 	ImageJFunctions.show(symmetricAffinities)
@@ -234,7 +235,7 @@ fun main(argv: Array<String>) {
 			uf,
 			0.5,
 			*steps,
-			toIndex = { parents[IntervalIndexer.positionToIndex(it, um).toInt()] }
+			toIndex = ToLongFunction { parents[IntervalIndexer.positionToIndex(it, um).toInt()] }
 			)
 	labels.forEach { it.set( uf.findRoot(it.integerLong)) }
 

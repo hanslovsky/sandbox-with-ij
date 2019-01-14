@@ -183,7 +183,7 @@ fun main(argv: Array<String>) {
 			if (Intervals.numElements(affinitiesNotCollapsed) * 2 <= Integer.MAX_VALUE)
 				ArrayImgFactory(FloatType()) else
 				CellImgFactory(FloatType(), *(args.blockSize + intArrayOf(affinities.dimension(3).toInt())))
-	val symmetricAffinities = Watersheds.constructAffinities(affinitiesNotCollapsed, *steps, factory = symmetricAffinitiesFactory)
+	val symmetricAffinities = Watersheds.constructAffinities(affinitiesNotCollapsed, offsets=steps, factory = symmetricAffinitiesFactory)
 	sw.stop()
 	LOG.info("Constructed symmetric affinities in {} seconds", sw.seconds())
 	sw.start()
