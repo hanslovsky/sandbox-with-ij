@@ -213,7 +213,7 @@ fun main(argv: Array<String>) {
 //		labelsRAI.update(null).currentStorageArray
 //	}
 //	else {
-	val (parents, roots) = Watersheds.letItRain(
+	val (parents, roots) = Watersheds.letItRainRealType(
 			Views.collapseReal(symmetricAffinities),
 			isValid = Predicate { !it.realDouble.isNaN() },
 			isBetter = BiPredicate { t, u -> t.realDouble > u.realDouble },
@@ -227,23 +227,23 @@ fun main(argv: Array<String>) {
 	val uf = IntArrayUnionFind(roots.size)
 	parents.forEachIndexed { index, l -> uf.join(uf.findRoot(l), uf.findRoot(parents[index])) }
 
-	val mask = Converters.convert(labels as RandomAccessibleInterval<UnsignedLongType>, { s, t -> t.set(s.integerLong > 0)}, BitType())
-	ConnectedComponents.unionFindFromSymmetricAffinities(
-			Views.extendValue(mask, BitType(false)),
-			Views.collapseReal(affinitiesSmoothed),
-			Views.extendValue(um, BitType(false)),
-			uf,
-			0.5,
-			*steps,
-			toIndex = ToLongFunction { parents[IntervalIndexer.positionToIndex(it, um).toInt()] }
-			)
-	labels.forEach { it.set( uf.findRoot(it.integerLong)) }
-
-	val colors = TLongIntHashMap()
-	val rng = Random(100L)
-	val converter: Converter<UnsignedLongType, ARGBType> = Converter { s, t -> if (!colors.contains(s.integerLong)) colors.put(s.integerLong, rng.nextInt()); t.set(colors.get(s.integerLong)) }
-	val colored = Converters.convert(labels as RandomAccessibleInterval<UnsignedLongType>, converter, ARGBType())
-	ImageJFunctions.show(colored)
-//	ImageJFunctions.show(mask)
+//	val mask = Converters.convert(labels as RandomAccessibleInterval<UnsignedLongType>, { s, t -> t.set(s.integerLong > 0)}, BitType())
+//	ConnectedComponents.unionFindFromSymmetricAffinities(
+//			Views.extendValue(mask, BitType(false)),
+//			Views.collapseReal(affinitiesSmoothed),
+//			Views.extendValue(um, BitType(false)),
+//			uf,
+//			0.5,
+//			*steps,
+//			toIndex = ToLongFunction { parents[IntervalIndexer.positionToIndex(it, um).toInt()] }
+//			)
+//	labels.forEach { it.set( uf.findRoot(it.integerLong)) }
+//
+//	val colors = TLongIntHashMap()
+//	val rng = Random(100L)
+//	val converter: Converter<UnsignedLongType, ARGBType> = Converter { s, t -> if (!colors.contains(s.integerLong)) colors.put(s.integerLong, rng.nextInt()); t.set(colors.get(s.integerLong)) }
+//	val colored = Converters.convert(labels as RandomAccessibleInterval<UnsignedLongType>, converter, ARGBType())
+//	ImageJFunctions.show(colored)
+////	ImageJFunctions.show(mask)
 
 }
