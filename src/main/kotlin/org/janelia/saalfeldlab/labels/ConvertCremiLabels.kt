@@ -126,7 +126,7 @@ fun <T> convert (
 fun main(args: Array<String>) {
 
 //	val path = "$USER_HOME/Downloads/sample_A_padded_20160501.hdf"
-	val identifiers = arrayOf("0", "1", "2", "A", "B", "C", "A+", "B+", "C+")
+	val identifiers = arrayOf("0", "1", "2", "A", "B", "C")//, "A+", "B+", "C+")
 	for (identifier in identifiers) {
 		val path = "$DM11_HOME/data/from-arlo/sample_$identifier.hdf"
 		val datasets = arrayOf(
@@ -139,6 +139,7 @@ fun main(args: Array<String>) {
 
 		ConvertCremiLabels.LOG.info("Up-sampling datasets for container {}: {}", path, datasets)
 
+		val sw = StopWatch.createAndStart()
 		for (dataset in datasets) {
 
 			val inputAttributes = N5HDF5Reader(path).getDatasetAttributes(dataset)
@@ -166,6 +167,8 @@ fun main(args: Array<String>) {
 			es.shutdown()
 
 		}
+		sw.stop()
+		ConvertCremiLabels.LOG.info("Finished up-sampling datasets {} in container {} in {} seconds", datasets, path, sw.seconds())
 	}
 
 
