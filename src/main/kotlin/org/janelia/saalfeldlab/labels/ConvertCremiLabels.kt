@@ -104,10 +104,15 @@ fun <T> convert (
 	val stacked = Views.stack(sections)
 
 	val blockSize = intArrayOf(64, 64, 64)
-	val resolution = doubleArrayOf(4.0, 4.0, 40.0 / (1 + numFillers))
+
+	val resolution = containerIn.getAttribute(datasetIn, "resolution", DoubleArray::class.java)?.reversedArray() ?: doubleArrayOf(4.0, 4.0, 40.0)
+	resolution[2] =  resolution[2] / (1 + numFillers)
+	val offset = containerIn.getAttribute(datasetIn, "offset", DoubleArray::class.java)?.reversedArray() ?: doubleArrayOf(0.0, 0.0, 0.0)
+
 	val attrs = DatasetAttributes(Intervals.dimensionsAsLongArray(stacked), blockSize, DataType.UINT64, GzipCompression())
 	containerOut.createDataset(datasetOut, attrs)
 	containerOut.setAttribute(datasetOut, "resolution", resolution)
+	containerOut.setAttribute(datasetOut, "offset", offset)
 	ConvertCremiLabels.LOG.info("Writing data for {}", datasetOut)
 	stopWatch.start()
 	N5Utils.save(stacked, containerOut, datasetOut, blockSize, GzipCompression(), es)

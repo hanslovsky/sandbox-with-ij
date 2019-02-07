@@ -1,98 +1,196 @@
 package org.janelia.saalfeldlab.labels
 
 import net.imglib2.RandomAccessibleInterval
-import net.imglib2.img.array.ArrayImgs
-import net.imglib2.type.numeric.integer.UnsignedByteType
-import net.imglib2.type.numeric.integer.UnsignedLongType
+import net.imglib2.img.array.ArrayImgFactory
+import net.imglib2.type.NativeType
+import net.imglib2.type.numeric.IntegerType
+import net.imglib2.type.numeric.integer.*
+import net.imglib2.type.numeric.real.DoubleType
+import net.imglib2.type.numeric.real.FloatType
 import net.imglib2.util.Intervals
 import net.imglib2.util.StopWatch
+import net.imglib2.util.Util
 import net.imglib2.view.Views
+import org.apache.commons.lang3.builder.ToStringBuilder
+import org.apache.commons.lang3.builder.ToStringStyle
 import org.janelia.saalfeldlab.labels.downsample.WinnerTakesAll
-import org.janelia.saalfeldlab.n5.DataType
-import org.janelia.saalfeldlab.n5.DatasetAttributes
-import org.janelia.saalfeldlab.n5.GzipCompression
-import org.janelia.saalfeldlab.n5.N5FSReader
+import org.janelia.saalfeldlab.n5.*
 import org.janelia.saalfeldlab.n5.hdf5.N5HDF5Reader
 import org.janelia.saalfeldlab.n5.hdf5.N5HDF5Writer
 import org.janelia.saalfeldlab.n5.imglib2.N5Utils
 import org.slf4j.LoggerFactory
-import java.io.File
 import java.lang.invoke.MethodHandles
 import java.util.concurrent.Callable
+import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.stream.Collectors
-import java.util.stream.DoubleStream
 import java.util.stream.LongStream
-import java.util.stream.StreamSupport
 
 private val USER_HOME = System.getProperty("user.home")
 
+private val DM11_HOME = "/groups/saalfeld/home/${System.getProperty("user.name")}"
+
 class CombineAsHDF {
+
+	class InOut(
+			val datasetIn: String,
+			val datasetOut: String = datasetIn,
+			val revertInputArrayAttributes: Boolean = true) {
+
+		override fun toString(): String {
+			return ToStringBuilder(this, ToStringStyle.SHORT_PREFIX_STYLE)
+					.append("datasetIn", datasetIn)
+					.append("datasetOut", datasetOut)
+					.append("revert", revertInputArrayAttributes)
+					.toString()
+		}
+
+	}
+
 	companion object {
 
 		private val LOG = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass())
 
-		fun run(args: Array<String>) {
-			val groundTruthContainer = "$USER_HOME/local/tmp/sample_A_padded_20160501-interpolated-labels-2-additional-sections.n5"
-			val groundTruthDataset = "volumes/labels/neuron_ids"
-			val grundTruthN5 = N5FSReader(groundTruthContainer)
-			val groundTruth = N5Utils.open<UnsignedLongType>(grundTruthN5, groundTruthDataset)
-			val groundTruthAttributes = grundTruthN5.getDatasetAttributes(groundTruthDataset)
+		private val COMPRESSION = GzipCompression()
 
-			val rawContainer = "/home/hanslovskyp/Downloads/sample_A_padded_20160501.hdf"
-			val rawDataset = "volumes/raw"
-			val rawN5 = N5HDF5Reader(rawContainer, 64, 64, 64)
-			val raw = N5Utils.open<UnsignedByteType>(rawN5, rawDataset)
-			val rawAttributes = rawN5.getDatasetAttributes(rawDataset)
+		private fun saveRaw(
+				n5in: N5Reader,
+				n5out: N5Writer,
+				dataset: InOut,
+				dataType: DataType,
+				blockSize: IntArray,
+				es: ExecutorService) {
 
+			fun <T> save() where T: NativeType<T>  {
+				N5Utils.save(N5Utils.open<T>(n5in, dataset.datasetIn), n5out, dataset.datasetOut, blockSize, COMPRESSION, es)
+			}
+
+			when(dataType) {
+				DataType.UINT8 -> save<UnsignedByteType>()
+				DataType.UINT16 -> save<UnsignedShortType>()
+				DataType.UINT32 -> save<UnsignedIntType>()
+				DataType.UINT64 -> save<UnsignedLongType>()
+				DataType.INT8 -> save<ByteType>()
+				DataType.INT16 -> save<ShortType>()
+				DataType.INT32 -> save<IntType>()
+				DataType.INT64 -> save<LongType>()
+				DataType.FLOAT32 -> save<FloatType>()
+				DataType.FLOAT64 -> save<DoubleType>()
+			}
+		}
+
+		private fun runForContainer(
+				rawContainer: N5Reader,
+				labelContainer: N5Reader,
+				outputContainer: N5Writer,
+				rawDataset: InOut,
+				vararg labelDatasets: InOut,
+				es: ExecutorService,
+				blockSize: IntArray = intArrayOf(64, 64, 64)
+
+		) {
 			val scaleFactor = 3
 			val voxelSizeFactor = scaleFactor.toDouble() * 3.0
-			val groundTruthResolution = DoubleStream.of(40.0 / scaleFactor.toDouble(), 4.0, 4.0).map { it * voxelSizeFactor }.toArray()
-			val groundTruthOffset = DoubleStream.of(1520.0, 3644.0, 3644.0).map { it * voxelSizeFactor }.toArray()
-			groundTruthOffset[0] = groundTruthOffset[0] - groundTruthResolution[0] / scaleFactor.toDouble()
 
-			val rawResolution = DoubleStream.of(40.0, 4.0, 4.0).map { it * voxelSizeFactor }.toArray()
-			val rawOffset = doubleArrayOf(0.0, 0.0, 0.0)
+			val rawResolution = getResolution(rawContainer, rawDataset).map { it * voxelSizeFactor }.toDoubleArray()
+			val rawOffset = getOffset(rawContainer, rawDataset).map { it * voxelSizeFactor }.toDoubleArray()
 
 			LOG.info("raw resolution: {}", rawResolution)
 			LOG.info("raw offset:     {}", rawOffset)
 
-			LOG.info("gt resolution:  {}", groundTruthResolution)
-			LOG.info("gt offset:      {}", groundTruthOffset)
+			val rawAttributes = rawContainer.getDatasetAttributes(rawDataset.datasetIn)
+			outputContainer.createDataset(rawDataset.datasetOut, rawAttributes.dimensions, blockSize, rawAttributes.dataType, GzipCompression())
 
-			val outputDir = "/groups/saalfeld/home/hanslovskyp/data/cremi/training"
-			File(outputDir).mkdirs()
-			val targetContainer = "$outputDir/sample_A_padded_20160501-2-additional-sections-fixed-offset.h5"
-			LOG.info("target container: ${targetContainer}")
-			val targetN5 = N5HDF5Writer(targetContainer, 64, 64, 64)
-			targetN5.createDataset(rawDataset, rawAttributes)
-			targetN5.createDataset(groundTruthDataset, groundTruthAttributes)
-
-			val es = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 3)
+			LOG.info("Copying raw dataset {} with dimensions {} into {}/{}", rawDataset.datasetIn, rawAttributes.dimensions, outputContainer, rawDataset.datasetOut)
 			val sw = StopWatch.createAndStart()
-			val downScaledDim = longArrayOf(
-					Math.ceil(groundTruth.dimension(0) / scaleFactor.toDouble()).toLong(),
-					Math.ceil(groundTruth.dimension(1) / scaleFactor.toDouble()).toLong())
+			saveRaw(rawContainer, outputContainer, rawDataset, rawAttributes.dataType, blockSize, es)
+			sw.stop()
+			LOG.info("Copied raw dataset {} into {}/{} in {} seconds", rawDataset.datasetIn, outputContainer, rawDataset.datasetOut, sw.seconds())
 
-			sw.start()
+			outputContainer.setAttribute(rawDataset.datasetOut, "resolution", rawResolution)
+			outputContainer.setAttribute(rawDataset.datasetOut, "offset", rawOffset)
+
+			for (labelDataset in labelDatasets) {
+
+				val dataType = labelContainer.getDatasetAttributes(labelDataset.datasetIn).dataType
+				when(dataType) {
+					DataType.UINT8 -> processLabelDataset<UnsignedByteType>(labelContainer, outputContainer, labelDataset, scaleFactor, voxelSizeFactor, es, blockSize)
+					DataType.UINT16 -> processLabelDataset<UnsignedShortType>(labelContainer, outputContainer, labelDataset, scaleFactor, voxelSizeFactor, es, blockSize)
+					DataType.UINT32 -> processLabelDataset<UnsignedIntType>(labelContainer, outputContainer, labelDataset, scaleFactor, voxelSizeFactor, es, blockSize)
+					DataType.UINT64 -> processLabelDataset<UnsignedLongType>(labelContainer, outputContainer, labelDataset, scaleFactor, voxelSizeFactor, es, blockSize)
+					DataType.INT8 -> processLabelDataset<ByteType>(labelContainer, outputContainer, labelDataset, scaleFactor, voxelSizeFactor, es, blockSize)
+					DataType.INT16 -> processLabelDataset<ShortType>(labelContainer, outputContainer, labelDataset, scaleFactor, voxelSizeFactor, es, blockSize)
+					DataType.INT32 -> processLabelDataset<IntType>(labelContainer, outputContainer, labelDataset, scaleFactor, voxelSizeFactor, es, blockSize)
+					DataType.INT64 -> processLabelDataset<LongType>(labelContainer, outputContainer, labelDataset, scaleFactor, voxelSizeFactor, es, blockSize)
+					else -> throw UnsupportedOperationException("Invalid dataType passed for integer label task: $dataType")
+				}
+
+			}
+		}
+
+		private fun getOffset(n5: N5Reader, dataset: InOut): DoubleArray {
+			return getDoubleArrayAttribute(n5, dataset, "offset", doubleArrayOf(0.0, 0.0, 0.0))
+		}
+
+		private fun getResolution(n5: N5Reader, dataset: InOut): DoubleArray {
+			return getDoubleArrayAttribute(n5, dataset, "resolution", doubleArrayOf(1.0, 1.0, 1.0))
+		}
+
+		private fun getDoubleArrayAttribute(n5: N5Reader, dataset: InOut, attribute: String, fallback: DoubleArray): DoubleArray {
+			try {
+				return n5
+						.getAttribute(dataset.datasetIn, attribute, DoubleArray::class.java)
+						?.let { if (dataset.revertInputArrayAttributes) it.reversedArray() else it }
+						?: fallback
+			} catch (e: ClassCastException) {
+				return n5
+						.getAttribute(dataset.datasetIn, attribute, LongArray::class.java)
+						?.let { if (dataset.revertInputArrayAttributes) it.reversedArray() else it }
+						?.map { it.toDouble() }
+						?.toDoubleArray()
+						?: fallback
+			}
+		}
+
+		private fun <T> processLabelDataset(
+				n5in: N5Reader,
+				n5out: N5Writer,
+				dataset: InOut,
+				scaleFactor: Int,
+				voxelSizeFactor: Double,
+				es: ExecutorService,
+				blockSize: IntArray = intArrayOf(64, 64, 64)
+		) where T: IntegerType<T>, T: NativeType<T> {
+
+			val labelAttributes = n5in.getDatasetAttributes(dataset.datasetIn)
+			val downScaledDim = longArrayOf(
+					Math.ceil(labelAttributes.dimensions[0] / scaleFactor.toDouble()).toLong(),
+					Math.ceil(labelAttributes.dimensions[1] / scaleFactor.toDouble()).toLong())
+
+			val labelData = N5Utils.open<T>(n5in, dataset.datasetIn)
+			val extension = Util.getTypeFromInterval(labelData).createVariable()
+			extension.setInteger(Label.INVALID)
+
+			LOG.info("Downsampling dataset {} with dimensions {}", dataset.datasetIn, labelAttributes.dimensions)
+			val sw = StopWatch.createAndStart()
 			val downsampledSectionFutures = LongStream
-					.range(0, groundTruth.dimension(2))
-					.mapToObj { Views.hyperSlice(groundTruth, 2, it) }
-					.map { Views.extendValue(it, UnsignedLongType(Label.INVALID)) }
+					.range(0, labelData.dimension(2))
+					.mapToObj { Views.hyperSlice(labelData, 2, it) }
+					.map { Views.extendValue(it, extension) }
 					.map {
 						val input = it;
 						val future = es.submit(Callable {
-							val output = ArrayImgs.unsignedLongs(*downScaledDim)
+							val output = ArrayImgFactory(extension.createVariable()).create(*downScaledDim)
 							WinnerTakesAll.downsample(input, output, scaleFactor, scaleFactor)
-							output as RandomAccessibleInterval<UnsignedLongType>
+							output as RandomAccessibleInterval<T>
 						})
 						future
 					}
 					.collect(Collectors.toList())
 			val downsampledSections = downsampledSectionFutures
 					.stream()
-					.map { it.get() as RandomAccessibleInterval<UnsignedLongType> }
+					.map { it.get() as RandomAccessibleInterval<T> }
 					.collect(Collectors.toList())
 			val downsampled = Views.stack(downsampledSections)
 			sw.stop()
@@ -100,50 +198,83 @@ class CombineAsHDF {
 
 			val downsampledAttributes = DatasetAttributes(
 					Intervals.dimensionsAsLongArray(downsampled),
-					intArrayOf(64, 64, 64),
-					DataType.UINT64,
+					blockSize,
+					labelAttributes.dataType,
 					GzipCompression())
-			val downsampledDataset = "$groundTruthDataset-downsampled"
-			targetN5.createDataset(downsampledDataset, downsampledAttributes)
-			val downsampledResolution = groundTruthResolution.clone()
+			val downsampledDataset = "${dataset.datasetOut}-downsampled"
+			n5out.createDataset(downsampledDataset, downsampledAttributes)
+
+			val attributes = DatasetAttributes(
+					Intervals.dimensionsAsLongArray(labelData),
+					blockSize,
+					labelAttributes.dataType,
+					GzipCompression())
+			n5out.createDataset(dataset.datasetOut, attributes)
+
+
+			val labelResolution = getResolution(n5in, dataset).map { it * voxelSizeFactor }.toDoubleArray()
+			val labelOffset = getOffset(n5in, dataset).map { it * voxelSizeFactor }.toDoubleArray()
+
+			val downsampledResolution = labelResolution.clone()
 			downsampledResolution[1] = downsampledResolution[1] * scaleFactor
 			downsampledResolution[2] = downsampledResolution[2] * scaleFactor
-			val downSampledOffset = groundTruthOffset.clone()
+
+			val downSampledOffset = labelOffset.clone()
 			// TODO how to set correct offset? Is this the right thing to do?
 			downSampledOffset[1] = downSampledOffset[1] + downsampledResolution[1] / scaleFactor.toDouble()
 			downSampledOffset[2] = downSampledOffset[2] + downsampledResolution[2] / scaleFactor.toDouble()
 
 			sw.start()
-			N5Utils.save(downsampled, targetN5, downsampledDataset, downsampledAttributes.blockSize, downsampledAttributes.compression, es)
+			sw.seconds()
+			N5Utils.save(downsampled, n5out, downsampledDataset, downsampledAttributes.blockSize, downsampledAttributes.compression, es)
 			sw.stop()
 			LOG.info("Finished saving downsampled data in ${TimeUnit.NANOSECONDS.toSeconds(sw.nanoTime())}s")
 
 			sw.start()
-			N5Utils.save(raw, targetN5, rawDataset, rawAttributes.blockSize, rawAttributes.compression, es)
-			sw.stop()
-			LOG.info("Finished copying raw data in ${TimeUnit.NANOSECONDS.toSeconds(sw.nanoTime())}s")
-			sw.start()
-			N5Utils.save(groundTruth, targetN5, groundTruthDataset, groundTruthAttributes.blockSize, groundTruthAttributes.compression, es)
+			N5Utils.save(labelData, n5out, dataset.datasetOut, attributes.blockSize, attributes.compression, es)
 			sw.stop()
 			LOG.info("Finished copying label data in ${TimeUnit.NANOSECONDS.toSeconds(sw.nanoTime())}s")
+
+			n5out.setAttribute(dataset.datasetOut, "resolution", labelResolution)
+			n5out.setAttribute(dataset.datasetOut, "offset", labelOffset)
+			n5out.setAttribute(downsampledDataset, "resolution", downsampledResolution)
+			n5out.setAttribute(downsampledDataset, "offset", downSampledOffset)
+
+		}
+
+		fun run(args: Array<String>) {
+
+			val identifiers = arrayOf("0", "1", "2", "A", "B", "C")
+			val datasets = arrayOf(
+					"volumes/labels/glia",
+					"volumes/labels/glia_noneurons",
+					"volumes/labels/mask",
+					"volumes/labels/neuron_ids",
+					"volumes/labels/neuron_ids_noglia")
+					.map { InOut(datasetIn = it, revertInputArrayAttributes = true) }
+					.toTypedArray()
+			val es = Executors.newFixedThreadPool(47)
+			val globalStopWatch = StopWatch.createAndStart()
+			for (identifier in identifiers) {
+				val labelContainer = "$DM11_HOME/data/from-arlo/interpolated/sample_$identifier-interpolated-labels-2-additional-sections.n5"
+				val rawContainer = "$DM11_HOME/data/from-arlo/sample_$identifier.hdf"
+				val outputContainer = "$DM11_HOME/data/from-arlo/interpolated-combined/sample_$identifier.hdf"
+				LOG.info("Downsampling and combining labels {} from {} with raw {} from {} into {}", datasets, labelContainer, "volumes/raw", rawContainer, outputContainer)
+				val sw = StopWatch.createAndStart()
+				runForContainer(
+						N5HDF5Reader(rawContainer),
+						N5FSReader(labelContainer),
+						N5HDF5Writer(outputContainer),
+						InOut(datasetIn = "volumes/raw", revertInputArrayAttributes = false),
+						*datasets,
+						es = es
+				)
+				sw.stop()
+				LOG.info("Finished combining with raw dataset and downsampling label datasets {} for sample {} in {} seconds", datasets, identifier, sw.seconds())
+			}
 			es.shutdown()
-
-			sw.start()
-			val maxId = StreamSupport
-					.stream(Views.flatIterable(groundTruth).spliterator(), false)
-					.mapToLong(UnsignedLongType::getIntegerLong).reduce { l1, l2 -> Math.max(l1, l2) }
-			sw.stop()
-
-			LOG.info("maxId=$maxId in ${TimeUnit.NANOSECONDS.toSeconds(sw.nanoTime())}s")
-
-			targetN5.setAttribute(rawDataset, "resolution", rawResolution)
-			targetN5.setAttribute(rawDataset, "offset", rawOffset)
-			targetN5.setAttribute(groundTruthDataset, "resolution", groundTruthResolution)
-			targetN5.setAttribute(groundTruthDataset, "offset", groundTruthOffset)
-			targetN5.setAttribute(groundTruthDataset, "maxId", maxId.asLong)
-			targetN5.setAttribute(downsampledDataset, "resolution", downsampledResolution)
-			targetN5.setAttribute(downsampledDataset, "offset", downSampledOffset)
-			targetN5.setAttribute(downsampledDataset, "maxId", maxId.asLong)
+			globalStopWatch.stop()
+			LOG.info("Finished combining with raw dataset and downsampling label datasets {} for samples {} in {} seconds", datasets, identifiers, globalStopWatch.seconds())
 
 		}
 	}
