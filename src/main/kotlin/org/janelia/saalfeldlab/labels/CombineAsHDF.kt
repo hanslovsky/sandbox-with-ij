@@ -244,7 +244,9 @@ class CombineAsHDF {
 
 		fun run(args: Array<String>) {
 
-			val identifiers = arrayOf("0", "1", "2", "A", "B", "C")
+			// revert input arrays such that offset, resolution are in z,y,x format
+			// change accordingly if needed, i.e. input alread is in z,y,x format
+			val identifiers = arrayOf("A", "B", "C", "0", "1", "2")
 			val datasets = arrayOf(
 					"volumes/labels/glia",
 					"volumes/labels/glia_noneurons",
@@ -255,23 +257,28 @@ class CombineAsHDF {
 					.toTypedArray()
 			val es = Executors.newFixedThreadPool(47)
 			val globalStopWatch = StopWatch.createAndStart()
+			val threads = mutableListOf<Thread>()
 			for (identifier in identifiers) {
-				val labelContainer = "$DM11_HOME/data/from-arlo/interpolated/sample_$identifier-interpolated-labels-2-additional-sections.n5"
-				val rawContainer = "$DM11_HOME/data/from-arlo/sample_$identifier.hdf"
-				val outputContainer = "$DM11_HOME/data/from-arlo/interpolated-combined/sample_$identifier.hdf"
-				LOG.info("Downsampling and combining labels {} from {} with raw {} from {} into {}", datasets, labelContainer, "volumes/raw", rawContainer, outputContainer)
-				val sw = StopWatch.createAndStart()
-				runForContainer(
-						N5HDF5Reader(rawContainer),
-						N5FSReader(labelContainer),
-						N5HDF5Writer(outputContainer),
-						InOut(datasetIn = "volumes/raw", revertInputArrayAttributes = false),
-						*datasets,
-						es = es
-				)
-				sw.stop()
-				LOG.info("Finished combining with raw dataset and downsampling label datasets {} for sample {} in {} seconds", datasets, identifier, sw.seconds())
+				threads.add(Thread {
+					val labelContainer = "$DM11_HOME/data/from-arlo/interpolated/sample_$identifier-interpolated-labels-2-additional-sections.n5"
+					val rawContainer = "$DM11_HOME/data/from-arlo/sample_$identifier.h5"
+					val outputContainer = "$DM11_HOME/data/from-arlo/interpolated-combined/sample_$identifier.h5"
+					LOG.info("Downsampling and combining labels {} from {} with raw {} from {} into {}", datasets, labelContainer, "volumes/raw", rawContainer, outputContainer)
+					val sw = StopWatch.createAndStart()
+					runForContainer(
+							N5HDF5Reader(rawContainer),
+							N5FSReader(labelContainer),
+							N5HDF5Writer(outputContainer),
+							InOut(datasetIn = "volumes/raw", revertInputArrayAttributes = true),
+							*datasets,
+							es = es
+					)
+					sw.stop()
+					LOG.info("Finished combining with raw dataset and downsampling label datasets {} for sample {} in {} seconds", datasets, identifier, sw.seconds())
+				})
 			}
+			threads.forEach(Thread::start)
+			threads.forEach(Thread::join)
 			es.shutdown()
 			globalStopWatch.stop()
 			LOG.info("Finished combining with raw dataset and downsampling label datasets {} for samples {} in {} seconds", datasets, identifiers, globalStopWatch.seconds())

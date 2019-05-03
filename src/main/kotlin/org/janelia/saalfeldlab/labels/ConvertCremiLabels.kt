@@ -105,9 +105,9 @@ fun <T> convert (
 
 	val blockSize = intArrayOf(64, 64, 64)
 
-	val resolution = containerIn.getAttribute(datasetIn, "resolution", DoubleArray::class.java)?.reversedArray() ?: doubleArrayOf(4.0, 4.0, 40.0)
+	val resolution = containerIn.getAttribute(datasetIn, "resolution", DoubleArray::class.java) ?: doubleArrayOf(4.0, 4.0, 40.0)
 	resolution[2] =  resolution[2] / (1 + numFillers)
-	val offset = containerIn.getAttribute(datasetIn, "offset", DoubleArray::class.java)?.reversedArray() ?: doubleArrayOf(0.0, 0.0, 0.0)
+	val offset = containerIn.getAttribute(datasetIn, "offset", DoubleArray::class.java) ?: doubleArrayOf(0.0, 0.0, 0.0)
 
 	val attrs = DatasetAttributes(Intervals.dimensionsAsLongArray(stacked), blockSize, DataType.UINT64, GzipCompression())
 	containerOut.createDataset(datasetOut, attrs)
@@ -131,9 +131,9 @@ fun <T> convert (
 fun main(args: Array<String>) {
 
 //	val path = "$USER_HOME/Downloads/sample_A_padded_20160501.hdf"
-	val identifiers = arrayOf("0", "1", "2", "A", "B", "C")//, "A+", "B+", "C+")
+	val identifiers = arrayOf("A", "B", "C")//, "0", "1", "2")
 	for (identifier in identifiers) {
-		val path = "$DM11_HOME/data/from-arlo/sample_$identifier.hdf"
+		val path = "$DM11_HOME/data/from-arlo/sample_$identifier.h5"
 		val datasets = arrayOf(
 				"volumes/labels/glia",
 				"volumes/labels/glia_noneurons",
