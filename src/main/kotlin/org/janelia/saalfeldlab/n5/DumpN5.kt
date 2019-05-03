@@ -79,16 +79,17 @@ private class Args : Callable<Unit> {
 
 	var n5: N5Reader? = null
 
-	var parsedSuccessFully = true
+	var parsedSuccessFully = false
 
 	override fun call() {
 		try {
+			requireNotNull(containerPath)
 			this.n5 = N5FSReader(containerPath)
 			require(n5!!.datasetExists(dataset), { "Dataset $dataset does not exist in $containerPath" })
 			this.dataType = this.n5?.getDatasetAttributes(this.dataset)?.dataType
+			parsedSuccessFully = true
 		} catch(e: IllegalArgumentException) {
 			DumpN5.LOG.error("Illegal argument: {}", e.message)
-			parsedSuccessFully = false
 		}
 
 	}
